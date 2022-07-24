@@ -1,0 +1,6 @@
+../Src/main.c:69:6:HAL_TIM_PeriodElapsedCallback	128	static
+../Src/main.c:519:6:Error_Handler	0	static
+../Src/main.c:129:6:SetClockPrescaler	48	static
+../Src/main.c:265:6:SystemClock_Config	72	static
+../Src/main.c:180:5:main	64	static
+../Src/main.c:535:6:assert_failed	0	static
