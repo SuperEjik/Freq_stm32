@@ -48,10 +48,12 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-long unsigned int i = 0;
+long unsigned int period = 0;
+long unsigned int pulseWidth = 0;
 char str[96] = {0,};
 char trans_str[96] = {0,};
 uint32_t falling = 0;
+uint32_t test = 0;
 long unsigned int Ti = 0;
 long unsigned int T = 0;
 long unsigned int N = 0;
@@ -94,8 +96,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) // переполн�
         {
                 T = (Ti / N);
 
-                snprintf(trans_str, 96, "Pulse %lu mks\n", falling);
-                //snprintf(trans_str, 96, "Freq %lu Hz\n", 1000000/T);
+                //snprintf(trans_str, 96, "Pulse %lu mks\n", test);
+                //test = 0;
+                //snprintf(trans_str, 96, "Pulse %lu mks\n", falling);
+                snprintf(trans_str, 96, "Freq %lu Hz\n", 1000000/T);
                 HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
 
                 Ti = 0;
@@ -112,16 +116,24 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) // таймер изм�
     {
             if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) // RISING с LOW на HIGH
             {
-            	 	__HAL_TIM_SET_COUNTER(&htim2, 0x0000); // обнуление счётчика
-                    count_overflow = 0; // обнуляем переменную
+
+            		TIM2->CNT = 0;
+            		period = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1);//период
+            		//pulseWidth = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_2);//длительность шим сигнала
+            	 	//test = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1);
+
+            	 	//__HAL_TIM_SET_COUNTER(&htim2, 0x0000); // обнуление счётчика
+                    //count_overflow = 0; // обнуляем переменную
             }
 
-            else if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) // FALLING с HIGH на LOW
+            /*else if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) // FALLING с HIGH на LOW
             {
             		falling = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_2) + (__HAL_TIM_GET_AUTORELOAD(&htim2) * count_overflow); // чтение значения в регистре захвата/сравнения
+                    Ti = Ti + falling;
+            }*/
 
-            }
-            Ti = Ti + falling;
+            //Ti = Ti + period;
+    		Ti = Ti + period;
             N++;
     }
 }
@@ -169,10 +181,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+	  /*HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
 	  delay_us(3);
       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
-      HAL_Delay(30);
+      HAL_Delay(30);*/
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -217,6 +229,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+  HAL_RCC_MCOConfig(RCC_MCO, RCC_MCO1SOURCE_HSE, RCC_MCODIV_1);
 }
 
 /**
@@ -281,6 +294,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
   TIM_IC_InitTypeDef sConfigIC = {0};
 
@@ -290,9 +304,18 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 71;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 65000;
+  htim2.Init.Period = 65535;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
@@ -369,14 +392,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
-
   /*Configure GPIO pin : PA8 */
   GPIO_InitStruct.Pin = GPIO_PIN_8;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 }
