@@ -32,6 +32,17 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define IDLE   0
+#define DONE   1
+#define F_CLK  72000000UL
+
+volatile uint8_t gu8_State = IDLE;
+volatile uint8_t gu8_MSG[35] = {'\0'};
+volatile uint32_t gu32_T1 = 0;
+volatile uint32_t gu32_T2 = 0;
+volatile uint32_t gu32_Ticks = 0;
+volatile uint16_t gu16_TIM2_OVC = 0;
+volatile uint32_t gu32_Freq = 0;
 #define DWT_CONTROL *(volatile unsigned long *)0xE0001000
 #define SCB_DEMCR *(volatile unsigned long *)0xE000EDFC
 /* USER CODE END PD */
@@ -57,7 +68,9 @@ uint32_t test = 0;
 long unsigned int Ti = 0;
 long unsigned int T = 0;
 long unsigned int N = 0;
+long double F_average = 0;
 volatile uint8_t count_overflow = 0;
+//long unsigned int count_overflow = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -94,47 +107,32 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) // переполн�
 
         if(htim == &htim1)
         {
-                T = (Ti / N);
+        	    F_average = (1000000.0) / ((long double)Ti / (long double)N) ;
 
-                //snprintf(trans_str, 96, "Pulse %lu mks\n", test);
-                //test = 0;
-                //snprintf(trans_str, 96, "Pulse %lu mks\n", falling);
-                snprintf(trans_str, 96, "Freq %lu Hz\n", 1000000/T);
+                snprintf(trans_str, 96, "Freq %f Hz\n", (float)F_average);
                 HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
 
                 Ti = 0;
                 N = 0;
+        		count_overflow = 0;
 
                 HAL_TIM_Base_Stop_IT(&htim1);
+                //__HAL_TIM_SET_COUNTER(&htim2, 0x0000);
                 HAL_TIM_Base_Start_IT(&htim1);
         }
 }
 
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) // таймер измерения импульсов
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) // таймер захвата импульсов
 {
     if(htim->Instance == TIM2)
     {
             if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) // RISING с LOW на HIGH
             {
-
             		TIM2->CNT = 0;
-            		period = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1);//период
-            		//pulseWidth = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_2);//длительность шим сигнала
-            	 	//test = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1);
-
-            	 	//__HAL_TIM_SET_COUNTER(&htim2, 0x0000); // обнуление счётчика
-                    //count_overflow = 0; // обнуляем переменную
+            		period = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1) + (__HAL_TIM_GET_AUTORELOAD(&htim2) * count_overflow);//период
+            		Ti = Ti + period;
+                    N++;
             }
-
-            /*else if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) // FALLING с HIGH на LOW
-            {
-            		falling = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_2) + (__HAL_TIM_GET_AUTORELOAD(&htim2) * count_overflow); // чтение значения в регистре захвата/сравнения
-                    Ti = Ti + falling;
-            }*/
-
-            //Ti = Ti + period;
-    		Ti = Ti + period;
-            N++;
     }
 }
 /* USER CODE END 0 */
@@ -295,6 +293,7 @@ static void MX_TIM2_Init(void)
   /* USER CODE END TIM2_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_SlaveConfigTypeDef sSlaveConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
   TIM_IC_InitTypeDef sConfigIC = {0};
 
@@ -317,6 +316,12 @@ static void MX_TIM2_Init(void)
     Error_Handler();
   }
   if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_GATED;
+  sSlaveConfig.InputTrigger = TIM_TS_ITR0;
+  if (HAL_TIM_SlaveConfigSynchro(&htim2, &sSlaveConfig) != HAL_OK)
   {
     Error_Handler();
   }
