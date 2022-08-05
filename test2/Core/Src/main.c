@@ -32,22 +32,16 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define IDLE   0
-#define DONE   1
 #define F_CLK  72000000UL
 
-volatile uint32_t gu8_State = IDLE;
-long int gu32_T1 = 0;
-long int gu32_T2 = 0;
-volatile uint32_t gu32_T_chan2 = 0;
-volatile uint32_t gu32_T_chan3 = 0;
-volatile uint32_t gu32_T_chan4 = 0;
-volatile uint32_t gu32_T_prev = 0;
-volatile uint32_t gu32_Ticks = 0;
-volatile uint16_t gu16_TIM2_OVC = 0;
-volatile uint32_t gu32_Freq = 0;
-long int F = 0;
+volatile uint32_t gu32_TIM2_OVC = 0;
+uint32_t T_i = 0;
+long double T_avg = 0;
 long int N = 0;
+long double F_avg = 0;
+uint32_t ICValue = 0;
+long double Frequency = 0;
+float Duty = 0;
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -77,49 +71,48 @@ static void MX_TIM1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
 {
     if(htim->Instance == TIM2)
     {
-    	gu16_TIM2_OVC++;
+    	gu32_TIM2_OVC++;
     }
-    /*if(htim == &htim1)
-    {
-        snprintf(trans_str, 96, "Freq %ld Hz\n", F);
-        F=0;
-    	HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
-    	HAL_TIM_Base_Stop_IT(&htim1);
-        __HAL_TIM_SET_COUNTER(&htim2, 0x0000);
-        HAL_TIM_Base_Start_IT(&htim1);
 
-        //N=0;
-    }*/
+    if(htim == &htim1)
+    {
+    	T_avg = (long double)T_i/(long double)N;
+
+    	/*snprintf(trans_str, 96, "T_avg %ld mks\n", T_avg);
+    	HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);*/
+
+    	F_avg = 72000000.0/(long double)T_avg;
+
+    	snprintf(trans_str, 96, "F_avg %Lf Hz | T_avg %Lf mks\n", (long double)F_avg, (long double)T_avg);
+    	HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
+
+        T_i = 0;
+        N = 0;
+
+    	HAL_TIM_Base_Stop_IT(&htim1);
+        //__HAL_TIM_SET_COUNTER(&htim2, 0x0000);
+        HAL_TIM_Base_Start_IT(&htim1);
+    }
 }
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) // колбек по захвату
 {
-    /*gu16_TIM2_OVC = 0;// точно измерят большие частоты, но плохо ловит T1 и T2
-
-    gu32_T1 = TIM2->CCR1;
-    gu32_T2 = TIM2->CCR1;
-	gu32_Ticks = (gu32_T2 + (gu16_TIM2_OVC * 65536)) - gu32_T1;
-	gu32_Freq = (uint32_t)(F_CLK/gu32_Ticks);
-	snprintf(trans_str, 96, "Freq %lu Hz\n", gu32_Freq);
-	HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);*/
-
-    if (htim->Instance == TIM2)// пробовал исправить алгоритм выше
+    /*if (htim->Instance == TIM2)// проблемы с захватом Т1 и Т2
     {
-    	HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
     	if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
     	{
-        	HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
     		gu16_TIM2_OVC = 0;
 
     		gu32_T1 = TIM2->CCR1;
     		gu32_T2 = TIM2->CCR1;
 
-    			if((gu32_T2 != gu32_T1))
-    			{
+    			//   if((gu32_T2 != gu32_T1))
+    			//{
     				if(gu32_T1 > gu32_T2)
     				{
     					gu32_Ticks = (gu32_T1 + (gu16_TIM2_OVC * 65536)) - gu32_T2;
@@ -134,57 +127,28 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) // колбек по з
     					snprintf(trans_str, 96, "Freq %ld Hz | T2 %ld mks | T1 %ld mks\n", gu32_Freq, gu32_T2, gu32_T1);
     					HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
     				}
-					F = F + (long int)gu32_Freq;
-					N++;
-    			}
+    			//}
     	}
-    }
-
-    //__HAL_TIM_SET_COUNTER(&htim2, 0x0000);
-    /*if(gu8_State == IDLE)//может измерить до 200К
-    {
-        gu32_T1 = TIM2->CCR1;
-        gu16_TIM2_OVC = 0;
-        gu8_State = DONE;
-    }
-    else if(gu8_State == DONE)
-    {
-        gu32_T2 = TIM2->CCR1;
-
-        gu32_Ticks = (gu32_T2 + (gu16_TIM2_OVC * __HAL_TIM_GET_AUTORELOAD(&htim2))) - gu32_T1;
-        gu32_Freq = (uint32_t)(F_CLK/gu32_Ticks);
-        //snprintf(trans_str, 96, "Freq %lu Hz\n", gu32_Freq);
-        //HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
-
-        gu8_State = IDLE;
-    	F = F + (long int)gu32_Freq;
-    	N++;
     }*/
 
-
-	/*if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+	if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)  // If the interrupt is triggered by channel 1
 	{
-		gu16_TIM2_OVC = 0;
-		TIM2->CNT = 0;
-		gu32_T1 = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1);
-		TIM2->CNT = 0;
-		gu32_T2 = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1);
-		snprintf(trans_str, 96, "T1 %d mks | T2 %d mks\n", gu32_T1, gu32_T2);
-		HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
-		//__HAL_TIM_SET_COUNTER(&htim2, 0x0000);
-	}*/
+		// Read the IC value
+		ICValue = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
 
-    /*if (htim->Instance == TIM2)
-    {
-	if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
-	{
-		gu16_TIM2_OVC = 0;
-		__HAL_TIM_SET_COUNTER(&htim2, 0x0000);
-		gu32_T1 = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1);
-		snprintf(trans_str, 96, "T1 %d mks\n", gu32_T1 + (gu16_TIM2_OVC * 65536));
-		HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
+		if (ICValue != 0)
+		{
+			// calculate the Duty Cycle
+			//Duty = (HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2) *100)/ICValue;
+
+			Frequency = (long double)F_CLK/(long double)(ICValue + 2);
+			/*snprintf(trans_str, 96, "Freq_avg %ld Hz\n", Frequency);
+			HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);*/
+
+			T_i = T_i + (ICValue + 2);
+			N++;
+		}
 	}
-    }*/
 }
 /* USER CODE END 0 */
 
@@ -221,10 +185,8 @@ int main(void)
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim1);
-  //HAL_TIM_Base_Start_IT(&htim2);
-  HAL_TIM_Base_Start(&htim2);
-  HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
-  //HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
+  HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);   // main channel
+  HAL_TIM_IC_Start(&htim2, TIM_CHANNEL_2);   // indirect channel
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -341,8 +303,9 @@ static void MX_TIM2_Init(void)
   /* USER CODE END TIM2_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_SlaveConfigTypeDef sSlaveConfig = {0};
   TIM_IC_InitTypeDef sConfigIC = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
 
   /* USER CODE BEGIN TIM2_Init 1 */
 
@@ -352,7 +315,7 @@ static void MX_TIM2_Init(void)
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 65535;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
@@ -366,9 +329,12 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_RESET;
+  sSlaveConfig.InputTrigger = TIM_TS_TI1FP1;
+  sSlaveConfig.TriggerPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sSlaveConfig.TriggerPrescaler = TIM_ICPSC_DIV1;
+  sSlaveConfig.TriggerFilter = 0;
+  if (HAL_TIM_SlaveConfigSynchro(&htim2, &sSlaveConfig) != HAL_OK)
   {
     Error_Handler();
   }
@@ -377,6 +343,18 @@ static void MX_TIM2_Init(void)
   sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
   sConfigIC.ICFilter = 0;
   if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
+  sConfigIC.ICSelection = TIM_ICSELECTION_INDIRECTTI;
+  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
   {
     Error_Handler();
   }
