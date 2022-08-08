@@ -35,6 +35,7 @@
 #define F_CLK  72000000UL
 
 volatile uint32_t gu32_TIM2_OVC = 0;
+long int over = 0;
 uint32_t T_i = 0;
 long double T_avg = 0;
 long int N = 0;
@@ -81,10 +82,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
 
     if(htim == &htim1)
     {
+    	//gu32_TIM2_OVC = 0;
+
     	T_avg = (long double)T_i/(long double)N;
 
-    	/*snprintf(trans_str, 96, "T_avg %ld mks\n", T_avg);
-    	HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);*/
+    	//snprintf(trans_str, 96, "T_avg %ld mks\n", T_avg);
+    	//HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
 
     	F_avg = 72000000.0/(long double)T_avg;
 
@@ -131,21 +134,25 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) // колбек по з
     	}
     }*/
 
+
 	if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)  // If the interrupt is triggered by channel 1
 	{
+
 		// Read the IC value
 		ICValue = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
 
 		if (ICValue != 0)
 		{
-			// calculate the Duty Cycle
+			//calculate the Duty Cycle
 			//Duty = (HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2) *100)/ICValue;
 
-			Frequency = (long double)F_CLK/(long double)(ICValue + 2);
-			/*snprintf(trans_str, 96, "Freq_avg %ld Hz\n", Frequency);
-			HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);*/
+			//Frequency = (long double)F_CLK/(long double)(ICValue + 2);
+			//snprintf(trans_str, 96, "T %ld mks\n",  ICValue + 2);
+			//HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000); //+ (65536 * gu32_TIM2_OVC)
 
-			T_i = T_i + (ICValue + 2);
+			T_i = T_i + (ICValue + ((gu32_TIM2_OVC - 1) * 65536) + 2);
+			//T_i = T_i + (ICValue + 2);
+	        gu32_TIM2_OVC = 0;
 			N++;
 		}
 	}
@@ -185,6 +192,7 @@ int main(void)
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim1);
+  HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);   // main channel
   HAL_TIM_IC_Start(&htim2, TIM_CHANNEL_2);   // indirect channel
   /* USER CODE END 2 */
@@ -260,7 +268,7 @@ static void MX_TIM1_Init(void)
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 7199;
-  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_DOWN;
   htim1.Init.Period = 9999;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
