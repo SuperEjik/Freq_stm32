@@ -35,16 +35,12 @@
 #define F_CLK  72000000UL
 
 volatile uint32_t gu32_TIM2_OVC = 0;
-long int over = 0;
 long int T_i = 0;
-long double T_avg = 0;
 long int N = 0;
 long double F_avg = 0;
-long int ICValue = 0;
-long double Frequency = 0;
-float Duty = 0;
-long int test1 = 0;
-long int test2 = 0;
+
+#define DWT_CONTROL *(volatile unsigned long *)0xE0001000
+#define SCB_DEMCR *(volatile unsigned long *)0xE000EDFC
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -69,11 +65,23 @@ static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
-void setPWM(uint16_t pwm_value);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+void DWT_Init(void)
+{
+    SCB_DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // разрешаем использовать счётчик
+    DWT_CONTROL |= DWT_CTRL_CYCCNTENA_Msk;   // запускаем счётчик
+}
+
+void delay_us(uint32_t us)
+{
+    uint32_t us_count_tic =  us * (SystemCoreClock / 1000000);
+    DWT->CYCCNT = 0U; // обнуляем счётчик
+    while(DWT->CYCCNT < us_count_tic);
+}
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
 {
@@ -84,77 +92,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim)
 
     if(htim == &htim1)
     {
-    	HAL_TIM_Base_Stop_IT(&htim2);
-    	HAL_TIM_Base_Stop_IT(&htim1);
-    	__HAL_TIM_SET_COUNTER(&htim2, 0x0000);
-
-    	T_avg = (long double)T_i/(long double)N;
-
-    	F_avg = (72000000.0/(long double)T_avg);
-
-    	snprintf(trans_str, 96, "F_avg %Lf Hz | T_avg %Lf mks | T_i %ld mks | N %ld \n", (long double)F_avg, (long double)T_avg, T_i, N);
-    	HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
+    	F_avg = (F_CLK/((long double)T_i/(long double)N));
 
     	T_i = 0;
     	N = 0;
 
+    	HAL_TIM_Base_Stop_IT(&htim1);
         HAL_TIM_Base_Start_IT(&htim1);
-        HAL_TIM_Base_Start_IT(&htim2);
     }
 }
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) // колбек по захвату
 {
-    /*if (htim->Instance == TIM2)// проблемы с захватом Т1 и Т2
-    {
-    	if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
-    	{
-    		gu16_TIM2_OVC = 0;
-
-    		gu32_T1 = TIM2->CCR1;
-    		gu32_T2 = TIM2->CCR1;
-
-    			//   if((gu32_T2 != gu32_T1))
-    			//{
-    				if(gu32_T1 > gu32_T2)
-    				{
-    					gu32_Ticks = (gu32_T1 + (gu16_TIM2_OVC * 65536)) - gu32_T2;
-    					gu32_Freq = (uint32_t)(F_CLK/gu32_Ticks);
-    					snprintf(trans_str, 96, "Freq %ld Hz | T1 %ld mks | T2 %ld mks\n", gu32_Freq, gu32_T1, gu32_T2);
-    					HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
-    				}
-    				else
-    				{
-    					gu32_Ticks = (gu32_T2 + (gu16_TIM2_OVC * 65536)) - gu32_T1;
-    					gu32_Freq = (uint32_t)(F_CLK/gu32_Ticks);
-    					snprintf(trans_str, 96, "Freq %ld Hz | T2 %ld mks | T1 %ld mks\n", gu32_Freq, gu32_T2, gu32_T1);
-    					HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
-    				}
-    			//}
-    	}
-    }*/
-
-
-	//if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)  // If the interrupt is triggered by channel 1
-	//{
-
-		// Read the IC value
-
-		//T_i = T_i + (HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1) + 2);
-		//N++;
-
-		/*snprintf(trans_str, 96, "Freq %ld mks\n", HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1) + 2);
-		HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);*/
-
-		/*ICValue = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-
-		if (ICValue != 0)
-		{
-			T_i = T_i + (ICValue + 2);
-			N++;
-		}*/
-	//}
-
     if(htim->Instance == TIM2)
     {
             if(htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) // RISING с LOW на HIGH
@@ -183,6 +132,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  DWT_Init();
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -207,8 +157,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  snprintf(trans_str, 96, "F_avg %.8Lf Hz\n", (long double)F_avg);
+	  HAL_UART_Transmit(&huart1, (uint8_t*)trans_str, strlen(trans_str), 1000);
+	  delay_us(1000000);
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
 	  //HAL_Delay(1000);
   }
